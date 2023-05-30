@@ -2,6 +2,8 @@ const axios = require('axios');
 const myConstant = require("../constant");
 const ordermodel = require("../models/order");
 const {createErrorObject,axiosRequest} = require("../controllers/order");
+const logger = require("../logs/devlogging");
+const cron = require("node-cron");
 
 
 const headers = {
@@ -9,12 +11,25 @@ const headers = {
     'X-AUTH-TOKEN': process.env.TOKEN,
 }
 
+const callCronJob = ()=>{
+    cron.schedule('*/15 * * * * *', async () => {
+        // console.log("cron job working");
+        logger.info("cron job working");
+        try{
+            await cronJob();
+        }catch(err){
+            logger.error("cron job error");
+        }
+    });
+}
 
 const toGetOrderStatus = async(identifier)=>{
-    console.log(identifier);
+    // console.log(identifier);
+    logger.info(identifier);
     try {
         const order = await ordermodel.findOne({identifier});
-        console.log(order);
+        // console.log(order);
+        logger.info(order);
         if(!order){
             throw createErrorObject(myConstant.statusCode["HTTP_BAD-REQUEST"],null,myConstant.message.error["ID_ERROR"],null);
         }
@@ -24,15 +39,19 @@ const toGetOrderStatus = async(identifier)=>{
 
         // return order.order_status;
     } catch (error) {
-        console.log("error in toGetOrderStatus");
+        // console.log("error in toGetOrderStatus");
+        logger.error("error in toGetOrderStatus");
         throw createErrorObject(myConstant.statusCode["HTTP_ISE"],null,myConstant.message.error["INT_SER_ERROR"],null);
     }
 }
 
 
 const toUpdateAnOrder = async (id,newResponse)=>{
-    console.log("toupdateanorder");
-    console.log("this is the id:",id,newResponse);
+    // console.log("toupdateanorder");
+    // console.log("this is the id:",id,newResponse);
+    logger.info("toupdateanorder");
+    logger.info("this is the id:",id,newResponse);
+
     try {
             let updatedOrder = await ordermodel.findOneAndUpdate({identifier:id},
                 {
@@ -45,7 +64,7 @@ const toUpdateAnOrder = async (id,newResponse)=>{
             // console.log(updatedOrder);
             return updatedOrder;
     } catch (error) {
-        console.error("there was error while changing the orderStatues.")
+        logger.error("there was error while changing the orderStatues.")
         throw createErrorObject(myConstant.statusCode["HTTP_ISE"],null,myConstant.message.error["INT_SER_ERROR"],null);
     }
 }
@@ -64,8 +83,9 @@ const toUpdateOrders = async (orders,newResponse)=>{
             // console.log(updatedOrder);
         });
     } catch (error) {
-        console.log(error);
-        console.log("to update orders");
+        // console.log(error);
+        // console.log("to update orders");
+        logger.error("to update order",error);
     }
 }
 
@@ -84,7 +104,8 @@ const cronJob = async ()=>{
         // will update the order's statues and also change the amount of filled quantity
         toUpdateOrders(fetchorders,response.payload);
     } catch (error) {
-        console.log("cron JOB function");     
+        // console.log("cron JOB function");  
+        logger.error("cron JOB function ")   
     }
 }
 
@@ -117,7 +138,8 @@ const placeOrder = async(body)=>{
         return createErrorObject(myConstant.statusCode["HTTP_SUCCESS"],myConstant.message.success["PLACE_ORDER"],null,order);
 
     } catch (error) {
-        console.log("placeORder",error);
+        // console.log("placeORder",error);
+        logger.error("placeORder",error);
         if(error.statusCode){
             return createErrorObject(error.statusCode,null,error.error,null);
         }
@@ -142,6 +164,7 @@ const modifyOrder = async(body)=>{
         return createErrorObject(myConstant.statusCode["HTTP_SUCCESS"],myConstant.message.success["MODIFY_ORDER"],null,{identifier,quantity,symbol,filled_quantity,order_status});
 
     } catch (error) {
+        logger.error(error);
         throw {
             statusCode:error.statusCode?error.statusCode:500,
             success:null,
@@ -159,7 +182,8 @@ const toDeleteOrder = async(id)=>{
         await toGetOrderStatus(id);
         // then we will make request to SENSIBULL MODIFY API
         const response = await axiosRequest("DELETE",{},headers,id);
-        console.log("this is delete function :",response);
+        // console.log("this is delete function :",response);
+        logger.info("this is delete function :",response);
         if(!response.payload){
             throw createErrorObject(myConstant.statusCode["HTTP_BAD-REQUEST"],null,myConstant.message.error["DELETE_ORDER"],null);
         }
@@ -169,7 +193,8 @@ const toDeleteOrder = async(id)=>{
 
         return createErrorObject(myConstant.statusCode["HTTP_SUCCESS"],myConstant.message.success["DELETE_ORDER"],null,{identifier,quantity,symbol,filled_quantity,order_status});
     } catch (error) {
-        console.log(error);
+        // console.log(error);
+        logger.error(error);
         throw {
             statusCode:error.statusCode?error.statusCode:500,
             success:null,
@@ -216,9 +241,9 @@ const getStatusOfOrder = async(identifier)=>{
 module.exports={
     placeOrder,
     modifyOrder,
-    cronJob,
     getStatusOfOrder,
-    toDeleteOrder
+    toDeleteOrder,
+    callCronJob
 }
 
 

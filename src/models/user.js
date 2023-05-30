@@ -71,9 +71,14 @@ userSchema.methods.toJSON = function(){
 
 userSchema.pre('save',async function(next) {
     const user = this;
+    console.log(user);
     try {
       if(user.isModified('password')){
-        user.password = await bcrypt.hash(user.password,8);
+        const saltRounds = 10;
+        // const salt = await bcrypt.genSalt(saltRounds);
+        const saltedPassword = process.env.PEPPER_F + user.password + process.env.PEPPER_L;
+        console.log(saltedPassword);
+        user.password = await bcrypt.hash(saltedPassword, saltRounds);
       }
       next();
     } catch (error) {
@@ -92,10 +97,14 @@ function validateDocument(document) {
 
 userSchema.statics.findByCredentials = async (email,password)=>{
     const user = await userModel.findOne({email});
+    console.log(password);
     if(!user){
         throw new Error("unable to login");
     }
-    const isMatch = await bcrypt.compare(password,user.password);
+    const saltedPassword = process.env.PEPPER_F + password + process.env.PEPPER_L;
+    console.log(saltedPassword);
+    const isMatch = await bcrypt.compare(saltedPassword,user.password);
+    console.log(isMatch);
     if(!isMatch){
         throw new Error("unable to login");
     }
