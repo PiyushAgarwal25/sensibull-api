@@ -21,8 +21,27 @@ const orderSchmea = mongoose.Schema({
     order_status:{
         type:String,
         required:true,
+    },
+    owner:{
+        type:mongoose.Schema.Types.ObjectId,
+        required:true,
+        ref:"user"
     }
-});
+},
+{ strict: 'throw',timestamps:true},
+);
+
+orderSchmea.methods.toJSON = function(){
+    const order = this;
+    const orderObject = order.toObject();
+
+    delete orderObject.owner;
+    delete orderObject.__v;
+    delete orderObject["createdAt"];
+    delete orderObject["updatedAt"];
+    delete orderObject["_id"];
+    return orderObject;
+}
 
 const orderModel = new mongoose.model("order",orderSchmea);
 

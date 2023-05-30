@@ -1,16 +1,20 @@
 const express = require("express");
 const router = express.Router();
-const axios = require('axios');
 const ordermodel = require("../models/order");
+const orderHelper = require("../Helpers/order");
 const cron = require("node-cron");
-const impFunc = require("../utilites/order");
+const auth = require('../middleware/auth');
+const myConstant = require("../constant");
+const { createErrorObject } = require("../controllers/order");
+
+
 router.use(express.json());
 
 
 cron.schedule('*/15 * * * * *', async () => {
     console.log("cron job working");
     try{
-        await impFunc.cronJob();
+        await orderHelper.cronJob();
     }catch(err){
         console.log("cron job error");
     }
@@ -18,124 +22,79 @@ cron.schedule('*/15 * * * * *', async () => {
 
 
 // to place order
-router.post("/order-service",async(req,res)=>{
-    let order_tag = "mystocks"
-    let {quantity=0,symbol=""} = req.body;
-    const url = `${process.env.URL}/api/v1/order/place`;
-
-    const headers = {
-    'X-AUTH-TOKEN': process.env.TOKEN,
-    'Content-Type': 'application/json',
-    };
-
-    const body = {symbol,quantity,order_tag};
-
+router.post("/order-service",auth,async(req,res)=>{
+    const body = {...req.body,order_tag:process.env.ORDER_TAG,id:req.user._id};
     try {
-        const response = await axios.post(url, body, { headers });
-        let x = response.data.payload.order;
-        let order = {
-            identifier:x.order_id,
-            symbol:x.symbol,
-            quantity:x.request_quantity,
-            filled_quantity:x.filled_quantity,
-            order_status:x.status
-        }
-        let neworder = new ordermodel(order);
-        await neworder.save();
-        res.status(200).send({
-            success:response.data.success,
-            payload:order,
-        });
+        const response = await orderHelper.placeOrder(body);
+        res.status(response.statusCode).send(response);
     } catch (error) {
-        console.error(error);
-        res.status(400).send({error:"there was an error"});
+        if(error.statusCode){
+            res.status(error.statusCode).send(error);
+            return;
+        }
+        res.status(500).
+        send(createErrorObject(myConstant.statusCode["HTTP_ISE"],null,myConstant.message.error["INT_SER_ERROR"],null))
     }
 });
 
 
 
 // to modify order
-router.patch("/order-service",async(req,res)=>{
+router.patch("/order-service",auth,async(req,res)=>{
     const {quantity=0,identifier=""} = req.body;
     try {
-        // first we will check the status of the order in our db
-        let status = await impFunc.toGetOrderStatus(identifier);
-        // console.log("status::",status);
-        if(!status){
-            return res.status(200).send({
-                success:"success",
-                msg:"this order can't be update now",
-            });
-        }
-
-        // then we will found out if order can we modified with the latest update
-        let canModify = await impFunc.toModifyAnOrder(identifier,quantity);
-        // console.log("canModify :",canModify);
-        if(canModify===2){
-            return res.status(200).send({
-                msg:"the requested quantity cannot be modified bcoz it's already filled",
-            })
-        }
-
-        res.status(200).send(canModify);
-    } catch (error) {
-        // console.log("error while modification processs");
-        res.status(400).send({error:"there was error while modifying this order"});
+        let response = await orderHelper.modifyOrder({quantity,identifier});
+        res.status(response.statusCode).send(response);
+    } catch (err) {
+        let statusCode = err.statusCode?err.statusCode:myConstant.statusCode["HTTP_BAD-REQUEST"];
+        let error = err.error?err.error:myConstant.message.error["ERR_MODIFY_ORDER"];
+        res.status(statusCode).
+        send(createErrorObject(statusCode,null,error,null));
     }
 });
 
-// cancel order
-router.delete("/order-service",async(req,res)=>{
+//========================================>> cancel order
+router.delete("/order-service",auth,async(req,res)=>{
     const {identifier=0} = req.body;
     try {
-        // first we will check the status of the order in our db
-        let status = await impFunc.toGetOrderStatus(identifier);
-        // console.log("status::",status);
-        if(!status){
-            return res.status(200).send({
-                success:"success",
-                msg:"this order can't be cancelled now",
-            });
-        }
-
-        let canDelete = await impFunc.toDeleteOrder(identifier);
-        // console.log("canModify :",canDelete);
-        if(canDelete===2){
-            return res.status(200).send({
-                msg:"Order cannot be cancelled",
-            })
-        }
-        res.status(200).send(canDelete);
-    } catch (error) {
-        console.log(error);
-        res.status(400).send("there was error while deleting process");
+        let response = await orderHelper.toDeleteOrder(identifier);
+        res.status(response.statusCode).send(response);
+    } catch (err) {
+        console.log(err);
+        let statusCode = err.statusCode?err.statusCode:myConstant.statusCode["HTTP_BAD-REQUEST"];
+        let error = err.error?err.error:myConstant.message.error["ERR_DELETE_ORDER"];
+        res.status(statusCode).
+        send(createErrorObject(statusCode,null,error,null));
     }
 });
 
-// fetch order status
-router.post("/order-service/status",async(req,res)=>{
+//===================================>> fetch order status
+router.post("/order-service/status",auth,async(req,res)=>{
     let {identifier} = req.body;
     try {  
-        let order =  await ordermodel.findOne({identifier});
-        // console.log("value of order is ",order);
-        if(!order){
-            res.status(401).send({error:"you have no order available with this ids"});
-            return;
-        }  
-        res.status(200).send({
-            sucess:true,
-            payload:{
-                identifier:order.identifier,
-                symbol:order.symbol,
-                quantity:order.quantity,
-                filled_quantity:order.filled_quantity,
-                order_status:order.order_status
-            }
-        })
+        let response = await orderHelper.getStatusOfOrder(identifier);
+        res.status(myConstant.statusCode["HTTP_SUCCESS"]).send(response);
     } catch (error) {
-        // console.log(error);
-        res.status(400).send({error:"there was error while fetching the status of the above order"})
+        console.log(error);
+        res.status(error.statusCode).send(error);
     }
 });
+
+//=====================================>> fetching all the orders of a particular USER
+router.get("/getOrders",auth,async(req,res)=>{
+    try {
+        await req.user.populate({
+            path:'orders'
+        })
+        res.status(200).send(createErrorObject(
+        myConstant.statusCode["HTTP_SUCCESS"],true,null,req.user.orders));
+    } catch (error) {
+        console.log(error);
+        res.status(500).send(
+            createErrorObject(myConstant.statusCode["HTTP_ISE"],null,myConstant.message.error["INT_SER_ERROR"],null));
+    }
+})
+
+
 
 module.exports = router;

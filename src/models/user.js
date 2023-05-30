@@ -34,6 +34,13 @@ const userSchema = mongoose.Schema({
             required:true,
         }
     }]
+});
+
+
+userSchema.virtual("orders",{
+    ref:'order',
+    localField:'_id',
+    foreignField:'owner',
 })
 
 userSchema.methods.validatePassword = function(){
